@@ -30,19 +30,19 @@ public class FinancialAnalysis {
 	}
 	
 	public double getNetIncome(JSONArray returnOnShareholderEquity) {
-		if (financialObject.isNull("netIncome")) {
-			 
-			 for (int i=0;i<returnOnShareholderEquity.length();i++) {
-				
-				 JSONObject equity = returnOnShareholderEquity.getJSONObject(i);
-				 if (! equity.has("netIncome")) {
-					 continue;
-				 }
-				 return equity.getDouble("netIncome"); 
-			 }
-			return 0;
+		if (! financialObject.isNull("netIncome")) {
+			return Double.valueOf(financialObject.getString("netIncome")).doubleValue();
 		}
-		return Double.valueOf(financialObject.getString("netIncome")).doubleValue();
+			 
+		 for (int i=0;i<returnOnShareholderEquity.length();i++) {
+
+			 JSONObject equity = returnOnShareholderEquity.getJSONObject(i);
+			 if (! equity.has("netIncome")) {
+				 continue;
+			 }
+			 return equity.getDouble("netIncome");
+		 }
+		return 0;
 	}
 	
 	public double getStockholderEquity() {
@@ -59,12 +59,11 @@ public class FinancialAnalysis {
 		return financialObject.getDouble("epsActual");
 	}
 	
-	public double getSharesOutstanding() {
+	public long getSharesOutstanding() {
 		if (financialObject.isNull("commonStockSharesOutstanding")) {
 			return -1;
 		}
-		
-		return Double.valueOf(financialObject.getDouble("commonStockSharesOutstanding")).doubleValue();
+		return Double.valueOf(financialObject.getDouble("commonStockSharesOutstanding")).longValue();
 	}
 	public double getDividendPaid() {
 		if (!financialObject.has("dividendsPaid") || financialObject.isNull("dividendsPaid")) {

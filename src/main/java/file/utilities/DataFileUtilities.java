@@ -32,9 +32,9 @@ public class DataFileUtilities {
         try {
             File myObj = new File(fileName);
             if (myObj.createNewFile()) {
-                System.out.println("File created: " + myObj.getName());
+                System.out.println("File created: " + myObj.getName() + " see " + fileName);
             } else {
-                System.out.println("Write file: about to overwrite.");
+                System.out.println("Write file: about to overwrite. see " + fileName);
             }
 
             FileWriter myWriter = new FileWriter(fileName);

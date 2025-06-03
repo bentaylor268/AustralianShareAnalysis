@@ -1,28 +1,27 @@
 package australian.share.analysis;
 
-import data.rest.client.RestClient;
-import file.utilities.DataFileUtilities;
+import data.rest.client.EODHDRestClient;
+import data.rest.client.HotCopperScreenScrape;
 import file.utilities.WorkingDirectory;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.math.BigDecimal;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class YearlyFinancials {
+public class CompanyFinancials {
     private static final Logger logger = Logger.getLogger("YearlyFinancials-logger");
     private static String DIRECTORY =  new WorkingDirectory().getWorkingDirectory();
+    public static String ASX_CODE_REGION = ".AU";
     //private static String DIRECTORY = "/home/ben/Desktop/ASX/";
-    private String url = "https://eodhistoricaldata.com/api";
+   // private String url = "https://eodhistoricaldata.com/api";
     private String TOKEN = "demo";
-    private String companyCode = null;
+    private String companyCode;
     private int startYearIndex;
     private int numberOfYears;
     private JSONObject financials;
@@ -30,20 +29,20 @@ public class YearlyFinancials {
     private JSONObject getLastSharePrice = new JSONObject();
     private JSONArray historicalSharePriceObject = new JSONArray();
     private JSONArray returnOnShareholderEquity;
+    private double currentPrice;
 
-    public YearlyFinancials(String url, String companyCode, String token, boolean isReadFile,
-                            int startYearIndex, int numberOfYears) throws JSONException, Exception {
+    public CompanyFinancials(String companyCode, boolean isReadFile,
+                             int startYearIndex, int numberOfYears) throws JSONException, Exception {
 
-        logger.log(Level.SEVERE,"Start of yearly financials");
-        this.url = url;
+
+      //  this.url = url;
         this.startYearIndex = startYearIndex;
         this.numberOfYears = numberOfYears;
         this.companyCode = companyCode;
-        this.TOKEN = token;
 
         this.setFinancialData(isReadFile);
-        logger.log(Level.SEVERE,"Start of yearly financials");
-        this.setFinalSharePrice(isReadFile);
+        this.currentPrice = this.setCurrentSharePrice();
+       // this.setFinalSharePrice(isReadFile);
         this.setHistoricalSharePrice(isReadFile);
         this.setEPSHistory();
         this.setReturnOnShareholderEquity();
@@ -76,74 +75,90 @@ public class YearlyFinancials {
         this.numberOfYears = numberOfYears;
     }
 
-    public void setFinancialData(boolean isFileRead) throws Exception {
+    public JSONArray getPercentageDividendsPaidArray() {
 
-        String fileName = DIRECTORY + "Fundamentals-" + this.companyCode + ".json";
-        logger.log(Level.SEVERE,fileName + " is read file " + isFileRead);
-        String response;
-        if (! isFileRead) {
-            URL url = new URL(this.url + "/fundamentals/" + this.companyCode+"?api_token=" + TOKEN);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            try {
-                response = RestClient.getResponseString(conn).toString();
-            } catch (Exception e) {
-                return;
+        List<FinancialAnalysis> dividendsList = this.castToList(financials.getJSONObject("Financials").getJSONObject("Cash_Flow").getJSONObject("yearly"));
+        JSONArray returnOnShareholderEquityArray = getReturnOnShareholderEquity();
+
+        dividendsList = this.setAnnualReturnOnEquityToDividendObject(dividendsList, returnOnShareholderEquityArray);
+        JSONArray returnArray = new JSONArray();
+        for (FinancialAnalysis yearDividend : dividendsList) {
+            JSONObject returnObject = new JSONObject();
+            returnObject.put("year",yearDividend.getYear());
+            returnObject.put("dividend", BigDecimal.valueOf(yearDividend.getDividendPaid()));
+            returnObject.put("income", BigDecimal.valueOf(yearDividend.getNetIncome(this.getReturnOnShareholderEquity())));
+            returnObject.put("percentPaid",BigDecimal.valueOf(yearDividend.getDividendPaymentPercentage(this.getReturnOnShareholderEquity())));
+            returnObject.put("numberOfShares",this.getNumberOfShares(Integer.valueOf(yearDividend.getYear().substring(0,4)).intValue()));
+            returnObject.put("dividendPerShare",BigDecimal.valueOf(yearDividend.getDividendPaid()/ this.getNumberOfShares(Integer.valueOf(yearDividend.getYear().substring(0,4)).intValue())));
+            returnArray.put(returnObject);
+        }
+
+        return returnArray;
+
+    }
+
+    public double getCurrentNetIncome() {
+        List<FinancialAnalysis> dividendsList = this.castToList(financials.getJSONObject("Financials").getJSONObject("Cash_Flow").getJSONObject("yearly"));
+        JSONArray returnOnShareholderEquityArray = getReturnOnShareholderEquity();
+        dividendsList = this.setAnnualReturnOnEquityToDividendObject(dividendsList, returnOnShareholderEquityArray);
+        String latestYear = "";
+        JSONArray returnArray = new JSONArray();
+        double latestNetIncome = 0d;
+        for (FinancialAnalysis yearDividend : dividendsList) {
+            if (latestYear.compareTo(yearDividend.getYear())>0) {
+                continue;
             }
-            this.financials = new JSONObject(response);
-            new DataFileUtilities().writeFile(fileName, response);
-            return;
+            latestYear = yearDividend.getYear();
+            logger.log(Level.SEVERE,"Latest Year is " + latestYear + " vs " + yearDividend.getYear());
+            latestNetIncome = yearDividend.getNetIncome(this.getReturnOnShareholderEquity());
         }
-        response = new DataFileUtilities().readFile(fileName);
-        logger.log(Level.SEVERE,fileName + " read file " + response);
-        if (response != null) {
-            this.financials = new JSONObject(response);
-        }
-        return;
+        return latestNetIncome;
     }
 
 
-
-    public JSONObject getFinalSharePrice() {
-        return this.getLastSharePrice;
+    public void setFinancialData(boolean isFileRead) throws Exception {
+        this.financials = new EODHDRestClient().setFinancialData(isFileRead,this.companyCode+ASX_CODE_REGION);
     }
 
+    /*
+
+     public JSONObject getFinalSharePrice() {
+         return this.getLastSharePrice;
+     }
 
 
-    private void setFinalSharePrice(boolean isFileRead) throws JSONException, Exception {
-        URL sharePriceUrl;
-        if (! isFileRead && startYearIndex == 0 ) {
-            sharePriceUrl = new URL(this.url + "/real-time/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
-            System.out.println(sharePriceUrl.toString());
-            HttpURLConnection con = (HttpURLConnection) sharePriceUrl.openConnection();
-            String response = RestClient.getResponseString(con).toString();
-            this.getLastSharePrice = new JSONObject(response);
 
-            return;
-        }
+     private void setFinalSharePrice(boolean isFileRead) throws JSONException, Exception {
+         this.getLastSharePrice = new HotCopperScreenScrape(this.companyCode).getCurrentPrice();
+         URL sharePriceUrl;
+         if (! isFileRead && startYearIndex == 0 ) {
+             sharePriceUrl = new URL(this.url + "/real-time/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
+             HttpURLConnection con = (HttpURLConnection) sharePriceUrl.openConnection();
+             String response = RestClient.getResponseString(con).toString();
+             this.getLastSharePrice = new JSONObject(response);
 
-        LocalDate date =  LocalDate.now().minusYears(numberOfYears);
-        String response = this.getHistoricalPrices(isFileRead);
+             return;
+         }
+
+         LocalDate date =  LocalDate.now().minusYears(numberOfYears);
+         String response = this.getHistoricalPrices(isFileRead);
+         URL historicalSharePrices = new URL("https://eodhistoricaldata.com/api/eod/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
+         HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
+         String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
 
 
-		/*
+         JSONArray historicalPrices;
+         try {
+             historicalPrices =  new JSONArray(response);
+         } catch (Exception e) {
+             return;
+         }
 
-		URL historicalSharePrices = new URL("https://eodhistoricaldata.com/api/eod/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
-		HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
-		String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
-*/
+         this.getLastSharePrice = getLatestPriceFromHistoricalPrices(new JSONArray(response));
+         return;
 
-        JSONArray historicalPrices;
-        try {
-            historicalPrices =  new JSONArray(response);
-        } catch (Exception e) {
-            return;
-        }
-
-        this.getLastSharePrice = getLatestPriceFromHistoricalPrices(new JSONArray(response));
-        return;
-
-    }
-
+     }
+ */
     private JSONObject getLatestPriceFromHistoricalPrices(JSONArray pricesArray) {
         JSONObject returnPrice = new JSONObject();
         for (int i=0;i<pricesArray.length();i++) {
@@ -176,36 +191,13 @@ public class YearlyFinancials {
         return this.historicalSharePriceObject;
     }
 
-
-
-    private String getHistoricalPrices(boolean isFileRead) throws Exception {
-        String fileName = DIRECTORY + "Eod-" + this.companyCode + ".json";
-        if (! isFileRead) {
-            URL historicalSharePrices = new URL(this.url + "/eod/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
-
-            HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
-
-            try {
-                String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
-                new DataFileUtilities().writeFile(fileName, response);
-                return response;
-            } catch (Exception e) {
-                System.out.println(e.getMessage());
-                return null;
-            }
-        }
-
-        return new DataFileUtilities().readFile(fileName);
-
-    }
     private void setHistoricalSharePrice(boolean isFileRead) throws Exception {
-
-        String prices = this.getHistoricalPrices(isFileRead);
+        String prices = new EODHDRestClient().getHistoricalPrices(isFileRead,this.companyCode+ASX_CODE_REGION);
         if (prices == null) {
             this.historicalSharePriceObject = null;
             return;
         }
-        this.historicalSharePriceObject = new JSONArray(this.getHistoricalPrices(isFileRead));
+        this.historicalSharePriceObject = new JSONArray(prices);
     }
 
 
@@ -305,12 +297,8 @@ public class YearlyFinancials {
                 returnList.add(year);
             }
         }
-
         // limit list to the last 'numberOfYears'.
-        returnList = this.getHistoricalFinancialsList(returnList);
-
-        return returnList;
-
+        return this.getHistoricalFinancialsList(returnList);
     }
 
 
@@ -456,32 +444,18 @@ public class YearlyFinancials {
     public double getEPSAnnualRateReturn() {
         try {
             List<FinancialAnalysis> annualEPSList = this.getEarningsList();
-            logger.log(Level.SEVERE, "getEPSAnnualRateReturn first is " + annualEPSList.get(0).getEarningsPerShare() + " length is " + annualEPSList.size());
             int lastObjectIndex = numberOfYears-1;
             if (lastObjectIndex>annualEPSList.size()) {
                 lastObjectIndex = annualEPSList.size() -1;
             }
-            return getCompoundingInterestRate(annualEPSList.get(lastObjectIndex).getEarningsPerShare(),
-                    annualEPSList.get(0).getEarningsPerShare());
+            return new CalculationUtilities().getCompoundingInterestRate(annualEPSList.get(lastObjectIndex).getEarningsPerShare(),
+                    annualEPSList.get(0).getEarningsPerShare(),numberOfYears);
         } catch (Exception e) {
             return 0;
         }
     }
 
-    public double getCompoundingGrowthRate() {
-        return this.getCompoundingInterestRate(this.getEarliestEPS(), this.getCurrentEPS());
-    }
 
-    public double getCompoundingInterestRate(double presentValue, double futureValue) {
-        //i = ( FV / PV )1/n − 1
-
-        double a = (futureValue / presentValue);
-
-        double b = 1/Double.valueOf(numberOfYears).doubleValue();
-
-        double i = Math.pow(a,b) - 1;
-        return i;
-    }
 
     public double getYearsToPayOffDebt() {
         // for this years figures
@@ -501,23 +475,54 @@ public class YearlyFinancials {
     }
 
 
-    public double getSharesOutstanding(int yearIndex) {
+    public long getSharesOutstanding(int yearIndex) {
         List<FinancialAnalysis> sharesOutstandingList =  this.castToList(financials.getJSONObject("Financials").getJSONObject("Balance_Sheet").getJSONObject("yearly"));
         sharesOutstandingList = this.getSortedList(sharesOutstandingList);
 
         if (sharesOutstandingList.size()<yearIndex+1) {
             return -1;
         }
-
         return sharesOutstandingList.get(yearIndex).getSharesOutstanding();
     }
 
+    public long getNumberOfShares() {
+        List<FinancialAnalysis> sharesOutstandingList =  this.castToList(financials.getJSONObject("Financials").getJSONObject("Balance_Sheet").getJSONObject("yearly"));
+        sharesOutstandingList = this.getSortedList(sharesOutstandingList);
+        if (sharesOutstandingList.size()==0) {
+            return -1;
+        }
+        return sharesOutstandingList.get(0).getSharesOutstanding();
+    }
+    public long getNumberOfShares(int year) {
+        List<FinancialAnalysis> yearlyData =  this.castToList(financials.getJSONObject("Financials").getJSONObject("Balance_Sheet").getJSONObject("yearly"));
+        yearlyData = this.getSortedList(yearlyData);
+
+        if (yearlyData.size()==0) {
+            return -1;
+        }
+        for (FinancialAnalysis financialAnalysis : yearlyData) {
+            if (Integer.valueOf(financialAnalysis.getYear().substring(0,4)).intValue()!=year) {
+                continue;
+            }
+            return financialAnalysis.getSharesOutstanding();
+        }
+        return -1;
+    }
+
+    public double getBookValue() {
+        if (! financials.has("Highlights") || financials.getJSONObject("Highlights").isNull("BookValue")) {
+            return 0d;
+        }
+        logger.log(Level.SEVERE,"CURRENT EPS IS " + financials.getJSONObject("Highlights"));
+        return financials.getJSONObject("Highlights").getDouble("BookValue");
+    }
 
     public double getCurrentEPS() {
         //TODO	 need to update current values to handle starting on a previous Year.class
         if (! financials.has("Highlights") || financials.getJSONObject("Highlights").isNull("EarningsShare")) {
             return 0d;
         }
+        logger.log(Level.SEVERE,"CURRENT EPS IS " + financials.getJSONObject("Highlights"));
         return financials.getJSONObject("Highlights").getDouble("EarningsShare");
     }
     public double getProjectionAccuracy() {
@@ -531,26 +536,20 @@ public class YearlyFinancials {
         return true;
     }
     public double getCurrentSharePrice() {
-        //TODO need to change to hisotirial api to handle running on previous periods.
-        if ( getLastSharePrice.has("previousClose")
-                && ! getLastSharePrice.get("previousClose").equals("NA")) {
-            return getLastSharePrice.getDouble("previousClose");
-        }
-
-        if (getLastSharePrice.get("close").equals("NA")) {
-            return 0;
-        }
-        return getLastSharePrice.getDouble("close");
+        return this.currentPrice;
     }
-
+    public double setCurrentSharePrice() {
+        return new HotCopperScreenScrape(this.companyCode).getCurrentPrice();
+    }
     public double getCurrentRateOfReturn() {
+
         return getCurrentEPS()/getCurrentSharePrice();
     }
 
     public double getCompoundingRateOfReturn() {
 
-        return this.getCompoundingInterestRate(this.getCurrentSharePrice(),
-                this.getFuturePerShareTradingPrice()*100);
+        return new CalculationUtilities().getCompoundingInterestRate(this.getCurrentSharePrice(),
+                this.getFuturePerShareTradingPrice()*100,numberOfYears);
     }
 
     public double getAveragePercentageDividendsPaid() {
@@ -591,28 +590,6 @@ public class YearlyFinancials {
 
 
 
-    public JSONArray getPercentageDividendsPaidArray() {
-
-        List<FinancialAnalysis> dividendsList = this.castToList(financials.getJSONObject("Financials").getJSONObject("Cash_Flow").getJSONObject("yearly"));
-        JSONArray returnOnShareholderEquityArray = getReturnOnShareholderEquity();
-
-        dividendsList = this.setAnnualReturnOnEquityToDividendObject(dividendsList, returnOnShareholderEquityArray);
-
-
-        JSONArray returnArray = new JSONArray();
-        for (FinancialAnalysis yearDividend : dividendsList) {
-            JSONObject returnObject = new JSONObject();
-            returnObject.put("year",yearDividend.getYear());
-            returnObject.put("dividend", BigDecimal.valueOf(yearDividend.getDividendPaid()));
-            returnObject.put("income", BigDecimal.valueOf(yearDividend.getNetIncome(this.getReturnOnShareholderEquity())));
-
-            returnObject.put("percentPaid",BigDecimal.valueOf(yearDividend.getDividendPaymentPercentage(this.getReturnOnShareholderEquity())));
-            returnArray.put(returnObject);
-        }
-
-        return returnArray;
-
-    }
 
     public double getPerShareShareholdersEquity() {
         List<FinancialAnalysis> totalShareholderEquityList = this.castToList(financials.getJSONObject("Financials").getJSONObject("Balance_Sheet").getJSONObject("yearly"));
@@ -650,7 +627,6 @@ public class YearlyFinancials {
 
     public double getAveragePERatio() {
         List<FinancialAnalysis> epsList = this.castToList(financials.getJSONObject("Earnings").getJSONObject("Annual"));
-        logger.log(Level.SEVERE, "epsList using " + financials.getJSONObject("Earnings").getJSONObject("Annual").toString());
         List<Double> peList = new ArrayList<Double>();
         double sumTotal = 0d;
         for (int i=0;i<historicalSharePriceObject.length();i++) {
@@ -663,16 +639,12 @@ public class YearlyFinancials {
                 if (yearEps.getEarningsPerShare()==0d) {
                     continue;
                 }
-                logger.log(Level.SEVERE, "day peRatio close is  " + dayPrice.getDouble("close") + " and " + yearEps.getEarningsPerShare() + " " + yearEps.getYear());
                 double peRatio = dayPrice.getDouble("close")/yearEps.getEarningsPerShare();
-                logger.log(Level.SEVERE, "day peRatio is  " + peRatio);
-
                 peList.add(peRatio);
                 sumTotal = sumTotal + peRatio;
 
             }
         }
-        logger.log(Level.SEVERE, "epsList value using " + sumTotal + "  and " + peList.size());
         return sumTotal/peList.size();
 
     }
@@ -699,27 +671,48 @@ public class YearlyFinancials {
     }
 
     public double getEarliestEPS() {
+        int index = 0;
         if (this.getEPSHistory().length()<numberOfYears) {
-            return this.getEPSHistory().getJSONObject(this.getEPSHistory().length()-1).getDouble("eps");
-            //	return -1;
+             return this.getEarliestEPSGreaterThanZero(this.getEPSHistory().length());
         }
+        return this.getEarliestEPSGreaterThanZero(numberOfYears);
+    }
 
-        return this.getEPSHistory().getJSONObject(numberOfYears-1).getDouble("eps");
+    private double getEarliestEPSGreaterThanZero(int index) {
+        for (int i=index-1; i>=0; i--) {
+            if (this.getEPSHistory().getJSONObject(i-1).getDouble("eps")<=0) {
+                continue;
+            }
+            logger.log(Level.SEVERE,"EPS " + this.getEPSHistory().getJSONObject(i-1));
+            return this.getEPSHistory().getJSONObject(i-1).getDouble("eps");
+        }
+        return 0d;
+
     }
 
     public double getProjectedTradingPrice() {
-
+        logger.log(Level.INFO,"PROJECED TRADING PRICE earliestEPS: " + this.getProjectedPerShareEarnings() + " average pe ratio: " + this.getAveragePERatio());
         return this.getProjectedPerShareEarnings() * this.getAveragePERatio();
     }
+    public double getCompoundingGrowthRate() {
 
+        logger.log(Level.INFO,"getCompoundingGrowthRate earliestEPS: " + this.getEarliestEPS() + " current eps " + this.getCurrentEPS());
+        return new CalculationUtilities().getCompoundingInterestRate(this.getEarliestEPS(), this.getCurrentEPS(),numberOfYears);
+    }
     public double getProjectedPerShareEarnings() {
+        logger.log(Level.INFO,"getProjectedPerShareEarnings averageEPS: " + this.getAverageEPS() + " growth rate is " + this.getCompoundingGrowthRate() );
+
         return this.getFutureValue(this.getAverageEPS(), this.getCompoundingGrowthRate());
     }
 
     public double getFuturePerShareTradingPrice() {
-        double dividendAmount = this.getFuturePerShareEarnings() * this.getAveragePercentageDividendsPaid();
-        double earningsMinusDividends = this.getFuturePerShareEarnings() - dividendAmount;
-        return  earningsMinusDividends * (this.getAveragePERatio()) + this.getFuturePerShareValueOfShareholderEquity();
+
+        double earningsMinusDividends = this.getFuturePerShareEarnings() - this.getFutureDividendsToBePaid();
+        return earningsMinusDividends * (this.getAveragePERatio()) + this.getFuturePerShareValueOfShareholderEquity();
+    }
+
+    public double getFutureDividendsToBePaid() {
+        return this.getFuturePerShareEarnings() * this.getAveragePercentageDividendsPaid();
     }
 
     private double getFutureValue(double presentValue, double interest) {

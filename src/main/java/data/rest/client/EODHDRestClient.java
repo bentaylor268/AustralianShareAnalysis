@@ -1,5 +1,7 @@
 package data.rest.client;
 
+import file.utilities.DataFileUtilities;
+import file.utilities.WorkingDirectory;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -9,11 +11,17 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
-public class RestClient {
+public class EODHDRestClient extends RestClient {
 
     private String bearerToken;
     private String environment;
     private String uRLPrefix;
+    private static String DIRECTORY =  new WorkingDirectory().getWorkingDirectory();
+
+    String token = "64293ba5706115.55872934";
+    String url = "https://eodhd.com/api";
+
+    private static String BEARER_TOKEN = "64293ba5706115.55872934";
 
     public String getEnvironment() {
         return environment;
@@ -25,21 +33,50 @@ public class RestClient {
         uRLPrefix = urlPrefix;
     }
 
-    public RestClient(String bearerToken) {
-        this(bearerToken,"Staging");
+    public EODHDRestClient() {
+        super(BEARER_TOKEN,"Production");
     }
 
-    public RestClient(String bearerToken, String environment) {
-
-        this.bearerToken = bearerToken;
-        this.environment = environment;
+    public String getHistoricalPrices(boolean isFileRead, String companyCode) throws Exception {
+        String fileName = DIRECTORY + "Eod-" + companyCode + ".json";
+        if (! isFileRead) {
+            URL historicalSharePrices = new URL(this.url + "/eod/" + companyCode + "?fmt=json&api_token=" + BEARER_TOKEN);
+            HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
+            try {
+                String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
+                new DataFileUtilities().writeFile(fileName, response);
+                return response;
+            } catch (Exception e) {
+                System.out.println(e.getMessage());
+                return null;
+            }
+        }
+        return new DataFileUtilities().readFile(fileName);
     }
-    public RestClient(String bearerToken, String environment, String urlPrefix) {
+    public JSONObject setFinancialData(boolean isFileRead, String companyCode) throws Exception {
 
-        this.bearerToken = bearerToken;
-        this.environment = environment;
-        this.uRLPrefix = urlPrefix;
+        String fileName = DIRECTORY + "Fundamentals-" + companyCode + ".json";
+        String response;
+        JSONObject returnObject = new JSONObject();
+        if (! isFileRead) {
+            URL url = new URL(this.url + "/fundamentals/" + companyCode+"?api_token=" + BEARER_TOKEN);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            try {
+                   response = EODHDRestClient.getResponseString(conn).toString();
+            } catch (Exception e) {
+                return new JSONObject();
+            }
+            returnObject = new JSONObject(response);
+            new DataFileUtilities().writeFile(fileName, response);
+            return returnObject;
+        }
+        response = new DataFileUtilities().readFile(fileName);
+        if (response != null) {
+            return new JSONObject(response);
+        }
+        return new JSONObject();
     }
+
     public String getToken() {
         return this.bearerToken;
     }
@@ -52,11 +89,11 @@ public class RestClient {
             return false;
         }
         return true;
-
     }
     public void setEnvironment(String environment) {
         this.environment = environment;
     }
+
 
     public String doGetRequest(String urlString) {
 
@@ -82,6 +119,37 @@ public class RestClient {
         }
         return null;
     }
+
+    public String doPostRequest(String urlString, JSONObject dataObject) {
+        try {
+            URL url = new URL(getURLPrefix() + urlString);
+
+            System.out.println("curl -X POST " + getURLPrefix() + urlString + " -H \"accept: */* \" -H \"Authorization: " + this.getToken() +"\" -H \"Content-Type: application/json\" -d \"" + dataObject.toString().replace("\"", "\\\"") + "\"");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type","application/json");
+            conn = setTokenAuthorization(conn, this.bearerToken);
+            conn.setRequestMethod("POST");
+
+            byte[] out = dataObject.toString().getBytes(StandardCharsets.UTF_8);
+
+            OutputStream stream = conn.getOutputStream();
+            stream.write(out);
+
+            StringBuffer response = getResponseString(conn);
+            conn.disconnect();
+            return response.toString();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+        return null;
+    }
+
+    public String doPutRequest(String urlString, JSONObject dataObject) {
+        return doPutRequest(urlString, dataObject.toString());
+
+    }
+
 
     public String doPutRequest(String urlString, String dataString) {
         try {
