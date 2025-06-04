@@ -131,8 +131,7 @@ public class EODHDRestClient extends RestClient {
             return response;
 
         } catch (Exception e) {
-            e.printStackTrace();
-            System.out.println(e.getMessage() + " using token " + this.getToken());
+            logger.log(Level.SEVERE,e.getMessage(),e + " " + this.getToken());
         }
         return null;
     }
@@ -157,6 +156,7 @@ public class EODHDRestClient extends RestClient {
             conn.disconnect();
             return response.toString();
         } catch (Exception e) {
+            logger.log(Level.SEVERE,e.getMessage(),e);
             System.out.println(e.getMessage());
         }
         return null;

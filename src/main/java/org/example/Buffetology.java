@@ -34,20 +34,21 @@ public class Buffetology {
     private double projectedDividends;
 
     public static void main(String[] args)  {
-         boolean isReadFile = true;
-         List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW","MAQ","MFG","MQG","NDQ","PME","RMD");
-       // List<String> validCodes = Arrays.asList("BKW");
+         boolean isDoDataDump = false;
+        //List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW","MAQ","MFG","MQG","NDQ","PME","RMD");
+         List<String> validCodes = Arrays.asList("ANZ");
 
         List<String> asxCodes = ASXCodes.getASXCodes();
         for (String asxCode : asxCodes) {
                 if (! validCodes.contains(asxCode)) {
                     continue;
                 }
-                if (isReadFile) {
+                if (! isDoDataDump) {
                     new Buffetology(asxCode).generateCompanyReport();
                     continue;
                 }
 
+                /// Do a data dump of all data from EODHD.
                 EODHDRestClient eodhdRestClient = new EODHDRestClient();
                 try {
                      eodhdRestClient.getCompanyDataDump(asxCode);
@@ -171,10 +172,7 @@ public class Buffetology {
         if (historyArray == null || this.companyFinancials==null || this.companyFinancials.getNumberOfYears()<=0) {
             return false;
         }
-
         if (historyArray.length()<(this.companyFinancials.getNumberOfYears()-1)) {
-            System.out.println("Array size is " + historyArray.length() +  "number of years is " + this.companyFinancials.getNumberOfYears());
-            System.out.println(historyArray);
             return false;
         }
         return true;
@@ -196,7 +194,7 @@ public class Buffetology {
     private String getBuffettologyStep5() {
         StringBuilder builder = new StringBuilder();
         JSONArray epsHistoryArray = this.companyFinancials.getEPSHistory();
-        logger.log(Level.SEVERE,"THE EPS HISTORY IS " + this.companyFinancials.getEPSHistory());
+        //logger.log(Level.SEVERE,"THE EPS HISTORY IS " + this.companyFinancials.getEPSHistory());
         builder.append("<h2>Earnings per share history</h2>" +
                 "     <table class=\"table table-striped\">"  +
                 "<thead>"

@@ -108,7 +108,7 @@ public class CompanyFinancials {
                 continue;
             }
             latestYear = yearDividend.getYear();
-            logger.log(Level.SEVERE,"Latest Year is " + latestYear + " vs " + yearDividend.getYear());
+            //logger.log(Level.SEVERE,"Latest Year is " + latestYear + " vs " + yearDividend.getYear());
             latestNetIncome = yearDividend.getNetIncome(this.getReturnOnShareholderEquity());
         }
         return latestNetIncome;
@@ -225,8 +225,8 @@ public class CompanyFinancials {
         List<FinancialAnalysis> annualEPSList = this.castToList(financials.getJSONObject("Earnings")
                 .getJSONObject("Annual"));
 
-        System.out.println(financials.getJSONObject("Earnings")
-                .getJSONObject("Annual"));
+       // System.out.println(financials.getJSONObject("Earnings")
+        //        .getJSONObject("Annual"));
 
         JSONArray returnArray = new JSONArray();
         for (FinancialAnalysis financialAnalysis : annualEPSList) {
@@ -474,7 +474,7 @@ public class CompanyFinancials {
         if (! financials.has("Highlights") || financials.getJSONObject("Highlights").isNull("BookValue")) {
             return 0d;
         }
-        logger.log(Level.SEVERE,"CURRENT EPS IS " + financials.getJSONObject("Highlights"));
+        //logger.log(Level.SEVERE,"Book value is " + financials.getJSONObject("Highlights"));
         return financials.getJSONObject("Highlights").getDouble("BookValue");
     }
 
@@ -483,7 +483,7 @@ public class CompanyFinancials {
         if (! financials.has("Highlights") || financials.getJSONObject("Highlights").isNull("EarningsShare")) {
             return 0d;
         }
-        logger.log(Level.SEVERE,"CURRENT EPS IS " + financials.getJSONObject("Highlights"));
+        //logger.log(Level.SEVERE,"CURRENT EPS IS " + financials.getJSONObject("Highlights"));
         return financials.getJSONObject("Highlights").getDouble("EarningsShare");
     }
     public double getProjectionAccuracy() {
@@ -644,7 +644,6 @@ public class CompanyFinancials {
             if (this.getEPSHistory().getJSONObject(i-1).getDouble("eps")<=0) {
                 continue;
             }
-            logger.log(Level.SEVERE,"EPS " + this.getEPSHistory().getJSONObject(i-1));
             return this.getEPSHistory().getJSONObject(i-1).getDouble("eps");
         }
         return 0d;
@@ -652,22 +651,20 @@ public class CompanyFinancials {
     }
 
     public double getProjectedTradingPrice() {
-        logger.log(Level.INFO,"PROJECED TRADING PRICE earliestEPS: " + this.getProjectedPerShareEarnings() + " average pe ratio: " + this.getAveragePERatio());
+      //  logger.log(Level.INFO,"PROJECED TRADING PRICE earliestEPS: " + this.getProjectedPerShareEarnings() + " average pe ratio: " + this.getAveragePERatio());
         return this.getProjectedPerShareEarnings() * this.getAveragePERatio();
     }
     public double getCompoundingGrowthRate() {
 
-        logger.log(Level.INFO,"getCompoundingGrowthRate earliestEPS: " + this.getEarliestEPS() + " current eps " + this.getCurrentEPS());
+       // logger.log(Level.INFO,"getCompoundingGrowthRate earliestEPS: " + this.getEarliestEPS() + " current eps " + this.getCurrentEPS());
         return new CalculationUtilities().getCompoundingInterestRate(this.getEarliestEPS(), this.getCurrentEPS(),numberOfYears);
     }
     public double getProjectedPerShareEarnings() {
-        logger.log(Level.INFO,"getProjectedPerShareEarnings averageEPS: " + this.getAverageEPS() + " growth rate is " + this.getCompoundingGrowthRate() );
-
+        //logger.log(Level.INFO,"getProjectedPerShareEarnings averageEPS: " + this.getAverageEPS() + " growth rate is " + this.getCompoundingGrowthRate() );
         return this.getFutureValue(this.getAverageEPS(), this.getCompoundingGrowthRate());
     }
 
     public double getFuturePerShareTradingPrice() {
-
         double earningsMinusDividends = this.getFuturePerShareEarnings() - this.getFutureDividendsToBePaid();
         return earningsMinusDividends * (this.getAveragePERatio()) + this.getFuturePerShareValueOfShareholderEquity();
     }

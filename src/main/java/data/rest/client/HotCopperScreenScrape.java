@@ -24,7 +24,7 @@ public class HotCopperScreenScrape {
         }
         System.out.println("The ASX CODE IS " + asxCode);
         page = this.doGetRequest(url.replace("{asxCode}",asxCode));
-        System.out.println(asxCode + " current price is $" + this.getCurrentPrice());
+       // System.out.println(asxCode + " current price is $" + this.getCurrentPrice());
     }
     public double getCurrentPrice() {
 
