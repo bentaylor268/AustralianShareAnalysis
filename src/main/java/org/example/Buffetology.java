@@ -4,6 +4,7 @@ import australian.share.analysis.ASXCodes;
 import australian.share.analysis.CalculationUtilities;
 import australian.share.analysis.CompanyFinancials;
 import australian.share.analysis.FinancialAnalysis;
+import data.rest.client.EODHDRestClient;
 import file.utilities.DataFileUtilities;
 import file.utilities.WorkingDirectory;
 import html.bootstrap4.utilities.BootstrapCard;
@@ -22,66 +23,108 @@ public class Buffetology {
     private static final Logger logger = Logger.getLogger("Buffetology-logger");
     private double TARGET_COMPOUND_PERCENT_RETURN = 8d;
     private int NUMBER_OF_YEARS = 10;
+    private String asxCode;
     private static final DecimalFormat df = new DecimalFormat("0.00");
     private double accuracy = 0d;
     private double previousAccuracy = 0d;
 
+    private static int MINUMUM_YEARS = 9;
 
     private CompanyFinancials companyFinancials;
     private double projectedDividends;
 
     public static void main(String[] args)  {
-        boolean isReadFile = true;
-    //    String token = "64293ba5706115.55872934";
-    //    String url = "https://eodhd.com/api";
+         boolean isReadFile = true;
          List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW","MAQ","MFG","MQG","NDQ","PME","RMD");
-   //     List<String> validCodes = Arrays.asList("BKW");
-        int MINUMUM_YEARS = 9;
-        List<String> stocks = ASXCodes.getASXCodes();
-        for (String stock : stocks) {
-                if (! validCodes.contains(stock)) {
+       // List<String> validCodes = Arrays.asList("BKW");
+
+        List<String> asxCodes = ASXCodes.getASXCodes();
+        for (String asxCode : asxCodes) {
+                if (! validCodes.contains(asxCode)) {
                     continue;
                 }
-                StringBuilder html = new StringBuilder(HTMLHeader.getHTMLHeader() + "<body>");
-                LocalDate date =  LocalDate.now().minusYears(0);
-                html.append("<p>From: ").append(date).append("</p>");
-                 try {
-                    Buffetology buffetology = new Buffetology(new CompanyFinancials(stock, isReadFile,0, MINUMUM_YEARS));
-                    html.append(buffetology.getCompanyHeader());
-                    if (! buffetology.isEnoughHistory()) {
-                        html.append("Not enough history");
-                        new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +buffetology.getErrorResultDirectory() + "/" + stock +"-" + MINUMUM_YEARS + ".html", html.toString());
-                        continue;
-                    }
-                    if (buffetology.isCheckSuccess().has("error")) {
-                        html.append(buffetology.isCheckSuccess().getString("error"));
-                        new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" + buffetology.getErrorResultDirectory() + "/" + stock + MINUMUM_YEARS + ".html", html.toString());
-                        continue;
-                    }
-
-                    double averagePrice = (buffetology.getCompanyFinancials().getProjectedTradingPrice() + buffetology.getCompanyFinancials().getFuturePerShareTradingPrice()) / 2d;
-                    double totalReturn = averagePrice + buffetology.projectedDividends;
-                    double compoundingRateOfReturn = new CalculationUtilities().getCompoundingInterestRate(buffetology.getCompanyFinancials().getCurrentSharePrice(), totalReturn,10)*100d;
-                    double targetBuyPrice = new CalculationUtilities().calculatePresentValue(averagePrice,buffetology.TARGET_COMPOUND_PERCENT_RETURN, buffetology.NUMBER_OF_YEARS, 1);
-
-                    StringBuilder summary = new StringBuilder();
-                    summary.append("<h2>Summary</h2>" + "     <table class=\"table table-striped\">" + "<thead>" + "<tr>" + "<th>Book value</th>" + "<th>Method 1</th>" + "<th>Method 2</th>" + "<th>Average</th>" + "<th>Dividends</th>" + "<th>Total Return %</th>" + "<th>Compounding Rate of Return</th>" + "<th>Current price</th>" + "<th>Target Buy Price for ").append(buffetology.TARGET_COMPOUND_PERCENT_RETURN).append("%</th>").append("</thead>").append("</tr>").append("<tbody>");
-
-                    summary.append("<tr>" + "<td>$").append(buffetology.getCompanyFinancials().getBookValue()).append("</td>").append("<td>$").append(buffetology.formatNumber(buffetology.getCompanyFinancials().getFuturePerShareTradingPrice())).append("</td>"
-                            // method 2
-                    ).append("<td>$").append(buffetology.formatNumber(buffetology.getCompanyFinancials().getProjectedTradingPrice())).append("</td>").append("<td>$").append(buffetology.formatNumber(averagePrice)).append("</td>").append("<td><b>$").append(buffetology.formatNumber(buffetology.projectedDividends)).append("</b></td>").append("<td><b>").append(buffetology.formatNumber((averagePrice + buffetology.projectedDividends - buffetology.getCompanyFinancials().getCurrentSharePrice()) / buffetology.getCompanyFinancials().getCurrentSharePrice() * 100d)).append("%</b></td>").append("<td><b>").append(buffetology.formatNumber(compoundingRateOfReturn)).append("%</b></td>").append("<td>$").append(buffetology.getCompanyFinancials().getCurrentSharePrice()).append("</td>").append("<td><b>$").append(buffetology.formatNumber(targetBuyPrice)).append("</b></td>").append("</tr>").append("</tbody></table>");
-                    html.append(new BootstrapCard().createCard("Summary", summary.toString(),buffetology.getReportColorFlag(buffetology.getCompanyFinancials().getCurrentSharePrice(),targetBuyPrice)));
-
-                    String header = new BootstrapCard().wrapStringInCard(html.toString());
-                    html = new StringBuilder(header);
-                    html.append(buffetology.prepareReportPeriod());
-                    html.append("</body></html>");
-                    new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +buffetology.getResultDirectory(buffetology.getCompanyFinancials().getCurrentSharePrice(), targetBuyPrice) + "/" + stock +"-" + 9 + ".html", html.toString());
-                    //}
-                } catch (Exception e) {
-                    logger.log(Level.SEVERE,"Error with " + stock);
+                if (isReadFile) {
+                    new Buffetology(asxCode).generateCompanyReport();
+                    continue;
                 }
+
+                EODHDRestClient eodhdRestClient = new EODHDRestClient();
+                try {
+                     eodhdRestClient.getCompanyDataDump(asxCode);
+                } catch (Exception e) {
+                     logger.log(Level.SEVERE,"Data dump for " + asxCode + " failed " + e.getMessage());
+                     continue;
+                }
+                logger.log(Level.INFO,"Data dump for " + asxCode + " has been completed");
             }
+    }
+
+    public Buffetology(String asxCode) {
+        try {
+            this.asxCode = asxCode;
+            this.companyFinancials = new CompanyFinancials(this.asxCode, 0, MINUMUM_YEARS);
+            this.projectedDividends = this.getProjectedDividendPayout(this.getProjectedIncome(companyFinancials.getCurrentNetIncome(), companyFinancials.getEquityGrowth(), companyFinancials.getAveragePercentageDividendsPaid(), companyFinancials.getNumberOfShares(), this.MINUMUM_YEARS));
+        } catch (Exception e) {
+            logger.log(Level.SEVERE,e.getMessage(),e);
+        }
+
+    }
+
+    public boolean generateCompanyReport() {
+        StringBuilder html = new StringBuilder(HTMLHeader.getHTMLHeader() + "<body>");
+        LocalDate date =  LocalDate.now().minusYears(0);
+        html.append("<p>From: ").append(date).append("</p>");
+        try {
+            html.append(this.getCompanyHeader());
+            if (! this.isEnoughHistory()) {
+                html.append("Not enough history");
+                new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +this.getErrorResultDirectory() + "/" + this.asxCode +"-" + MINUMUM_YEARS + ".html", html.toString());
+                return true;
+            }
+            if (this.isCheckSuccess().has("error")) {
+                html.append(this.isCheckSuccess().getString("error"));
+                new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" + this.getErrorResultDirectory() + "/" +  this.asxCode + MINUMUM_YEARS + ".html", html.toString());
+                return true;
+            }
+
+            double averagePrice = (this.getCompanyFinancials().getProjectedTradingPrice() + this.getCompanyFinancials().getFuturePerShareTradingPrice()) / 2d;
+            double totalReturn = averagePrice + this.projectedDividends;
+            double compoundingRateOfReturn = new CalculationUtilities().getCompoundingInterestRate(this.getCompanyFinancials().getCurrentSharePrice(), totalReturn,this.NUMBER_OF_YEARS)*100d;
+            double targetBuyPrice = new CalculationUtilities().calculatePresentValue(averagePrice,this.TARGET_COMPOUND_PERCENT_RETURN, this.NUMBER_OF_YEARS, 1);
+
+            StringBuilder summary = new StringBuilder();
+            summary.append("<h2>Summary</h2>" + "     <table class=\"table table-striped\">" + "<thead>" + "<tr>" + "<th>Book value</th>" + "<th>Method 1</th>" + "<th>Method 2</th>" + "<th>Average</th>" + "<th>Dividends</th>" + "<th>Total Return %</th>" + "<th>Compounding Rate of Return</th>" + "<th>Current price</th>" + "<th>Target Buy Price for ").append(this.TARGET_COMPOUND_PERCENT_RETURN).append("%</th>").append("</thead>").append("</tr>").append("<tbody>");
+
+            summary.append("<tr>" + "<td>$")
+                    .append(this.getCompanyFinancials().getBookValue())
+                    .append("</td>")
+                    .append("<td>$")
+                    .append(this.formatNumber(this.getCompanyFinancials().getFuturePerShareTradingPrice()))
+                    .append("</td>"
+                    // method 2
+            ).append("<td>$")
+                    .append(this.formatNumber(this.getCompanyFinancials().getProjectedTradingPrice()))
+                    .append("</td>")
+                    .append("<td>$").append(this.formatNumber(averagePrice)).append("</td>")
+                    .append("<td><b>$")               .append(this.formatNumber(this.projectedDividends))                   .append("</b></td>")
+                    .append("<td><b>").append(this.formatNumber((averagePrice + this.projectedDividends - this.getCompanyFinancials().getCurrentSharePrice()) / this.getCompanyFinancials().getCurrentSharePrice() * 100d)) .append("%</b></td>")
+                    .append("<td><b>") .append(this.formatNumber(compoundingRateOfReturn)) .append("%</b></td>")
+                    .append("<td>$")  .append(this.getCompanyFinancials().getCurrentSharePrice())     .append("</td>")
+                    .append("<td><b>$")   .append(this.formatNumber(targetBuyPrice))  .append("</b></td>")
+                    .append("</tr>")
+                    .append("</tbody></table>");
+            html.append(new BootstrapCard().createCard("Summary", summary.toString(),this.getReportColorFlag(this.getCompanyFinancials().getCurrentSharePrice(),targetBuyPrice)));
+
+            String header = new BootstrapCard().wrapStringInCard(html.toString());
+            html = new StringBuilder(header);
+            html.append(this.prepareReportPeriod());
+            html.append("</body></html>");
+            new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +this.getResultDirectory(this.getCompanyFinancials().getCurrentSharePrice(), targetBuyPrice) + "/" +  this.asxCode +"-" + MINUMUM_YEARS + ".html", html.toString());
+            return true;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE,"Error with " +  this.asxCode);
+            return false;
+        }
     }
 
     private String getResultDirectory(double currentPrice, double targetPrice) {
@@ -112,10 +155,7 @@ public class Buffetology {
         return this.companyFinancials;
     }
 
-    public Buffetology(CompanyFinancials companyFinancials) {
-           this.companyFinancials = companyFinancials;
-           this.projectedDividends = this.getProjectedDividendPayout(this.getProjectedIncome(companyFinancials.getCurrentNetIncome(),companyFinancials.getEquityGrowth(),companyFinancials.getAveragePercentageDividendsPaid(),companyFinancials.getNumberOfShares(),10));
-    }
+
     private StringBuilder prepareReportPeriod() {
 
         String html = this.getBuffettologyStep12() +

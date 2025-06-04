@@ -10,8 +10,11 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class EODHDRestClient extends RestClient {
+    private static final Logger logger = Logger.getLogger("EODHDRestClient-logger");
 
     private String bearerToken;
     private String environment;
@@ -37,39 +40,53 @@ public class EODHDRestClient extends RestClient {
         super(BEARER_TOKEN,"Production");
     }
 
-    public String getHistoricalPrices(boolean isFileRead, String companyCode) throws Exception {
+    public String getHistoricalPrices(String companyCode) throws Exception {
         String fileName = DIRECTORY + "Eod-" + companyCode + ".json";
-        if (! isFileRead) {
-            URL historicalSharePrices = new URL(this.url + "/eod/" + companyCode + "?fmt=json&api_token=" + BEARER_TOKEN);
-            HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
-            try {
-                String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
-                new DataFileUtilities().writeFile(fileName, response);
-                return response;
-            } catch (Exception e) {
-                System.out.println(e.getMessage());
-                return null;
-            }
-        }
         return new DataFileUtilities().readFile(fileName);
     }
-    public JSONObject setFinancialData(boolean isFileRead, String companyCode) throws Exception {
 
+    public boolean getCompanyDataDump(String companyCode) throws Exception {
+        try {
+            return this.writeHistoricalPrices(companyCode) && this.writeFinancialData(companyCode);
+        } catch (Exception e) {
+            throw e;
+            //return false;
+        }
+    }
+
+    private boolean writeHistoricalPrices(String companyCode) throws Exception {
+        String fileName = DIRECTORY + "Eod-" + companyCode + ".json";
+        URL historicalSharePrices = new URL(this.url + "/eod/" + companyCode + "?fmt=json&api_token=" + BEARER_TOKEN);
+        HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
+        try {
+            String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
+            new DataFileUtilities().writeFile(fileName, response);
+            return true;
+        } catch (Exception e) {
+            throw e;
+//            logger.log(Level.SEVERE,e.getMessage(),e);
+//            return false;
+        }
+    }
+
+    private boolean writeFinancialData(String companyCode) throws Exception {
         String fileName = DIRECTORY + "Fundamentals-" + companyCode + ".json";
         String response;
-        JSONObject returnObject = new JSONObject();
-        if (! isFileRead) {
-            URL url = new URL(this.url + "/fundamentals/" + companyCode+"?api_token=" + BEARER_TOKEN);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            try {
-                   response = EODHDRestClient.getResponseString(conn).toString();
-            } catch (Exception e) {
-                return new JSONObject();
-            }
-            returnObject = new JSONObject(response);
-            new DataFileUtilities().writeFile(fileName, response);
-            return returnObject;
+        URL url = new URL(this.url + "/fundamentals/" + companyCode+"?api_token=" + BEARER_TOKEN);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        try {
+            response = EODHDRestClient.getResponseString(conn).toString();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE,e.getMessage(),e);
+            return false;
         }
+        new DataFileUtilities().writeFile(fileName, response);
+        return true;
+
+    }
+    public JSONObject setFinancialData(String companyCode) throws Exception {
+        String fileName = DIRECTORY + "Fundamentals-" + companyCode + ".json";
+        String response;
         response = new DataFileUtilities().readFile(fileName);
         if (response != null) {
             return new JSONObject(response);

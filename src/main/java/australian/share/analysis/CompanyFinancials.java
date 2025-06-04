@@ -31,8 +31,7 @@ public class CompanyFinancials {
     private JSONArray returnOnShareholderEquity;
     private double currentPrice;
 
-    public CompanyFinancials(String companyCode, boolean isReadFile,
-                             int startYearIndex, int numberOfYears) throws JSONException, Exception {
+    public CompanyFinancials(String companyCode,int startYearIndex, int numberOfYears) throws JSONException, Exception {
 
 
       //  this.url = url;
@@ -40,10 +39,10 @@ public class CompanyFinancials {
         this.numberOfYears = numberOfYears;
         this.companyCode = companyCode;
 
-        this.setFinancialData(isReadFile);
+        this.setFinancialData();
         this.currentPrice = this.setCurrentSharePrice();
        // this.setFinalSharePrice(isReadFile);
-        this.setHistoricalSharePrice(isReadFile);
+        this.setHistoricalSharePrice();
         this.setEPSHistory();
         this.setReturnOnShareholderEquity();
     }
@@ -116,49 +115,11 @@ public class CompanyFinancials {
     }
 
 
-    public void setFinancialData(boolean isFileRead) throws Exception {
-        this.financials = new EODHDRestClient().setFinancialData(isFileRead,this.companyCode+ASX_CODE_REGION);
+    public void setFinancialData() throws Exception {
+        this.financials = new EODHDRestClient().setFinancialData(this.companyCode+ASX_CODE_REGION);
     }
 
-    /*
 
-     public JSONObject getFinalSharePrice() {
-         return this.getLastSharePrice;
-     }
-
-
-
-     private void setFinalSharePrice(boolean isFileRead) throws JSONException, Exception {
-         this.getLastSharePrice = new HotCopperScreenScrape(this.companyCode).getCurrentPrice();
-         URL sharePriceUrl;
-         if (! isFileRead && startYearIndex == 0 ) {
-             sharePriceUrl = new URL(this.url + "/real-time/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
-             HttpURLConnection con = (HttpURLConnection) sharePriceUrl.openConnection();
-             String response = RestClient.getResponseString(con).toString();
-             this.getLastSharePrice = new JSONObject(response);
-
-             return;
-         }
-
-         LocalDate date =  LocalDate.now().minusYears(numberOfYears);
-         String response = this.getHistoricalPrices(isFileRead);
-         URL historicalSharePrices = new URL("https://eodhistoricaldata.com/api/eod/" + this.companyCode + "?fmt=json&api_token=" + TOKEN);
-         HttpURLConnection historicalSharePriceCon = (HttpURLConnection) historicalSharePrices.openConnection();
-         String response =  RestClient.getResponseString(historicalSharePriceCon).toString();
-
-
-         JSONArray historicalPrices;
-         try {
-             historicalPrices =  new JSONArray(response);
-         } catch (Exception e) {
-             return;
-         }
-
-         this.getLastSharePrice = getLatestPriceFromHistoricalPrices(new JSONArray(response));
-         return;
-
-     }
- */
     private JSONObject getLatestPriceFromHistoricalPrices(JSONArray pricesArray) {
         JSONObject returnPrice = new JSONObject();
         for (int i=0;i<pricesArray.length();i++) {
@@ -191,8 +152,8 @@ public class CompanyFinancials {
         return this.historicalSharePriceObject;
     }
 
-    private void setHistoricalSharePrice(boolean isFileRead) throws Exception {
-        String prices = new EODHDRestClient().getHistoricalPrices(isFileRead,this.companyCode+ASX_CODE_REGION);
+    private void setHistoricalSharePrice() throws Exception {
+        String prices = new EODHDRestClient().getHistoricalPrices(this.companyCode+ASX_CODE_REGION);
         if (prices == null) {
             this.historicalSharePriceObject = null;
             return;
