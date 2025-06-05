@@ -9,6 +9,7 @@ import file.utilities.DataFileUtilities;
 import file.utilities.WorkingDirectory;
 import html.bootstrap4.utilities.BootstrapCard;
 import html.bootstrap4.utilities.HTMLHeader;
+import html.bootstrap4.utilities.ReportIndexPage;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -34,20 +35,27 @@ public class Buffetology {
     private double projectedDividends;
 
     public static void main(String[] args)  {
-         boolean isDoDataDump = false;
-        //List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW","MAQ","MFG","MQG","NDQ","PME","RMD");
-         List<String> validCodes = Arrays.asList("ANZ");
+        boolean isDoDataDump = false;
+        List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW","MAQ","MFG","MQG","NDQ","PME","RMD");
+        //List<String> validCodes = ASXCodes.getASXCodes();
+
+        //List<String> validCodes = Arrays.asList("ANZ","ARB","ASX","BKW");
+       //  List<String> validCodes = Arrays.asList("ANZ");
 
         List<String> asxCodes = ASXCodes.getASXCodes();
+        ReportIndexPage reportIndexPage = new ReportIndexPage();
         for (String asxCode : asxCodes) {
                 if (! validCodes.contains(asxCode)) {
                     continue;
                 }
+
+
                 if (! isDoDataDump) {
-                    new Buffetology(asxCode).generateCompanyReport();
+                    JSONObject reportObject = new Buffetology(asxCode).generateCompanyReport();
+                    reportIndexPage.addReport(reportObject);
+                    new DataFileUtilities().writeFile(reportObject.getString("fileName"), reportObject.getString("html"));
                     continue;
                 }
-
                 /// Do a data dump of all data from EODHD.
                 EODHDRestClient eodhdRestClient = new EODHDRestClient();
                 try {
@@ -57,7 +65,8 @@ public class Buffetology {
                      continue;
                 }
                 logger.log(Level.INFO,"Data dump for " + asxCode + " has been completed");
-            }
+        }
+        new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory()+"index.html", reportIndexPage.getIndexPage());
     }
 
     public Buffetology(String asxCode) {
@@ -71,7 +80,25 @@ public class Buffetology {
 
     }
 
-    public boolean generateCompanyReport() {
+    private String getFileName(JSONObject reportObject) {
+        if (reportObject.getString("status").equals("error")){
+            return new WorkingDirectory().getWorkingDirectory() + "results/" +this.getErrorResultDirectory() + "/" + this.asxCode +"-" + MINUMUM_YEARS + ".html";
+        }
+        return new WorkingDirectory().getWorkingDirectory() + "results/" + reportObject.getString("directory") + "/" +  this.asxCode +"-" + MINUMUM_YEARS + ".html";
+    }
+
+    private JSONObject getErrorResponse(JSONObject response, StringBuilder html) {
+        response.put("status","error");
+        response.put("fileName", this.getFileName(response));
+        response.put("html",html.toString());
+        response.put("currentPrice",this.getCompanyFinancials().getCurrentSharePrice());
+        response.put("targetBuyPrice",-1d);
+        return response;
+    }
+    public JSONObject generateCompanyReport() {
+        JSONObject response = new JSONObject();
+        response.put("asxCode",asxCode);
+        response.put("companyName",this.companyFinancials.getCompanyName());
         StringBuilder html = new StringBuilder(HTMLHeader.getHTMLHeader() + "<body>");
         LocalDate date =  LocalDate.now().minusYears(0);
         html.append("<p>From: ").append(date).append("</p>");
@@ -79,19 +106,17 @@ public class Buffetology {
             html.append(this.getCompanyHeader());
             if (! this.isEnoughHistory()) {
                 html.append("Not enough history");
-                new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +this.getErrorResultDirectory() + "/" + this.asxCode +"-" + MINUMUM_YEARS + ".html", html.toString());
-                return true;
+                return this.getErrorResponse(response,html);
             }
             if (this.isCheckSuccess().has("error")) {
                 html.append(this.isCheckSuccess().getString("error"));
-                new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" + this.getErrorResultDirectory() + "/" +  this.asxCode + MINUMUM_YEARS + ".html", html.toString());
-                return true;
+                return this.getErrorResponse(response,html);
             }
 
             double averagePrice = (this.getCompanyFinancials().getProjectedTradingPrice() + this.getCompanyFinancials().getFuturePerShareTradingPrice()) / 2d;
             double totalReturn = averagePrice + this.projectedDividends;
             double compoundingRateOfReturn = new CalculationUtilities().getCompoundingInterestRate(this.getCompanyFinancials().getCurrentSharePrice(), totalReturn,this.NUMBER_OF_YEARS)*100d;
-            double targetBuyPrice = new CalculationUtilities().calculatePresentValue(averagePrice,this.TARGET_COMPOUND_PERCENT_RETURN, this.NUMBER_OF_YEARS, 1);
+            double targetBuyPrice =  new CalculationUtilities().calculatePresentValue(averagePrice,this.TARGET_COMPOUND_PERCENT_RETURN, this.NUMBER_OF_YEARS, 1);
 
             StringBuilder summary = new StringBuilder();
             summary.append("<h2>Summary</h2>" + "     <table class=\"table table-striped\">" + "<thead>" + "<tr>" + "<th>Book value</th>" + "<th>Method 1</th>" + "<th>Method 2</th>" + "<th>Average</th>" + "<th>Dividends</th>" + "<th>Total Return %</th>" + "<th>Compounding Rate of Return</th>" + "<th>Current price</th>" + "<th>Target Buy Price for ").append(this.TARGET_COMPOUND_PERCENT_RETURN).append("%</th>").append("</thead>").append("</tr>").append("<tbody>");
@@ -120,11 +145,17 @@ public class Buffetology {
             html = new StringBuilder(header);
             html.append(this.prepareReportPeriod());
             html.append("</body></html>");
-            new DataFileUtilities().writeFile(new WorkingDirectory().getWorkingDirectory() + "results/" +this.getResultDirectory(this.getCompanyFinancials().getCurrentSharePrice(), targetBuyPrice) + "/" +  this.asxCode +"-" + MINUMUM_YEARS + ".html", html.toString());
-            return true;
+
+            response.put("status",this.getResultDirectory(this.getCompanyFinancials().getCurrentSharePrice(), targetBuyPrice));
+            response.put("directory", this.getResultDirectory(this.getCompanyFinancials().getCurrentSharePrice(), targetBuyPrice));
+            response.put("fileName", this.getFileName(response));
+            response.put("currentPrice",this.getCompanyFinancials().getCurrentSharePrice());
+            response.put("targetBuyPrice",df.format(new BigDecimal(targetBuyPrice)));
+            response.put("html",html.toString());
+            return response;
         } catch (Exception e) {
-            logger.log(Level.SEVERE,"Error with " +  this.asxCode);
-            return false;
+            logger.log(Level.SEVERE,"Error with " +  this.asxCode + " "  + e.getMessage() + " "  + e);
+            return null;
         }
     }
 
